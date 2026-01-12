@@ -174,6 +174,55 @@ function consoleaction(args, rights, sessionid, parent) {
                 });
             } catch (e) { sendError(e.toString(), args.reqId); }
             break;
+        case 'listDirectory':
+            var fs = require('fs');
+            var path = require('path');
+            var dir = args.path;
+
+            // Basic path sanitization/handling
+            if (dir == '' || dir == null) {
+                if (process.platform == 'win32') dir = 'C:\\';
+                else dir = '/';
+            }
+
+            try {
+                fs.readdir(dir, function (err, files) {
+                    if (err) {
+                        sendError("Error reading directory: " + err, args.reqId);
+                        return;
+                    }
+                    var fileList = [];
+                    // Add parent directory option if not at root
+                    if (dir.length > 3) {
+                        fileList.push({ name: '..', type: 'dir', path: path.join(dir, '..') });
+                    }
+
+                    var processing = files.length;
+                    if (processing == 0) {
+                        sendDirResponse(dir, fileList, args.reqId);
+                        return;
+                    }
+
+                    files.forEach(function (f) {
+                        var fullPath = path.join(dir, f);
+                        fs.stat(fullPath, function (err, stats) {
+                            if (!err) {
+                                fileList.push({
+                                    name: f,
+                                    type: stats.isDirectory() ? 'dir' : 'file',
+                                    path: fullPath,
+                                    size: stats.size
+                                });
+                            }
+                            processing--;
+                            if (processing == 0) {
+                                sendDirResponse(dir, fileList, args.reqId);
+                            }
+                        });
+                    });
+                });
+            } catch (e) { sendError(e.toString(), args.reqId); }
+            break;
         default:
             dbg('Unknown action: ' + fnname + ' with data ' + JSON.stringify(args));
             break;

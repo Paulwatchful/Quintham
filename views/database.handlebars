@@ -52,6 +52,47 @@
         #results th {
             background-color: #f2f2f2;
         }
+
+        /* Modal File Browser */
+        #fileBrowser {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.4);
+        }
+
+        #browserContent {
+            background-color: #fefefe;
+            margin: 10% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 50%;
+            height: 500px;
+            overflow: auto;
+        }
+
+        .fileItem {
+            padding: 5px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+
+        .fileItem:hover {
+            background-color: #ddd;
+        }
+
+        .dirItem {
+            font-weight: bold;
+            color: #000080;
+        }
+
+        .fileItem.file {
+            color: #333;
+        }
     </style>
     <!-- We might need to load sql.js from a CDN or local includes -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
@@ -60,8 +101,11 @@
 <body>
     <h2>Quintham Database Manager</h2>
     <div class="toolbar">
-        Path: <input type="text" id="dbPath" value="C:\ProgramData\Quintham\data.db" style="width: 300px;">
+        Path: <input type="text" id="dbPath"
+            value="C:\Users\PaulGreenwood\AppData\Local\Packages\Watchful_9nnya97m1bay6\LocalCache\Local\Watchful\database.db3"
+            style="width: 400px;">
         <button onclick="checkDatabase()">Check Exists</button>
+        <button onclick="browseFiles()">Browse...</button>
         <button onclick="downloadDatabase()">Load Database</button>
         <button onclick="saveDatabase()">Save & Upload</button>
         <span id="status">Ready</span>
@@ -73,6 +117,16 @@
         <button onclick="runQuery()">Run Query</button>
         <div id="queryStatus"></div>
         <table id="results"></table>
+    </div>
+
+    <!-- File Browser Modal -->
+    <div id="fileBrowser">
+        <div id="browserContent">
+            <h3>Select Database File <button onclick="closeBrowser()" style="float:right;">X</button></h3>
+            <div>Current Path: <span id="browserPath"></span></div>
+            <hr />
+            <div id="fileList"></div>
+        </div>
     </div>
 
     <script>
@@ -169,13 +223,32 @@
             window.opener.parent.meshserver.send(cmd);
         }
 
-        // Listen for messages from Server (relayed via Opener -> this)
-        // Actually, the opener receives the message in 'user.handlebars' logic (onDeviceRefreshEnd... wait)
-        // The main view 'user.handlebars' is where the websocket is connected.
-        // We need a way to pass the message from the main view to this popup.
-        // We can hook window.opener.pluginHandler.quintham.databaseResponse
+        // --- Browsing Logic ---
+        function browseFiles() {
+            document.getElementById('fileBrowser').style.display = 'block';
+            var currentPath = document.getElementById('dbPath').value;
+            // Try to get directory of current file
+            var dir = currentPath.substring(0, currentPath.lastIndexOf('\\'));
+            if (!dir) dir = "C:\\";
+            loadDirectory(dir);
+        }
 
-        // Setup listener in opener
+        function closeBrowser() {
+            document.getElementById('fileBrowser').style.display = 'none';
+        }
+
+        function loadDirectory(path) {
+            document.getElementById('browserPath').innerText = path;
+            document.getElementById('fileList').innerText = "Loading...";
+            sendPluginCommand('listDirectory', { path: path });
+        }
+
+        function selectFile(path) {
+            document.getElementById('dbPath').value = path;
+            closeBrowser();
+        }
+
+        // Listen for messages from Server
         if (window.opener && window.opener.parent.pluginHandler.quintham) {
             window.opener.parent.pluginHandler.quintham.databaseResponse = function (msg) {
                 console.log("DB Response", msg);
@@ -185,6 +258,10 @@
 
         function handleResponse(msg) {
             if (msg.error) {
+                if (msg.type == 'directory') { // Handle directory error (e.g. access denied)
+                    document.getElementById('fileList').innerText = "Error: " + msg.error;
+                    return;
+                }
                 setStatus("Error: " + msg.error);
                 return;
             }
@@ -209,6 +286,30 @@
             if (msg.type == 'write') {
                 setStatus("Database Uploaded Successfully.");
             }
+            if (msg.type == 'directory') {
+                renderDirectory(msg.data.path, msg.data.files);
+            }
+        }
+
+        function renderDirectory(dirPath, files) {
+            var list = document.getElementById('fileList');
+            list.innerHTML = '';
+
+            files.forEach(f => {
+                var div = document.createElement('div');
+                div.className = 'fileItem ' + (f.type == 'dir' ? 'dirItem' : 'file');
+                var icon = f.type == 'dir' ? '&#128193; ' : '&#128196; '; // Folder or File emoji
+                div.innerHTML = icon + f.name;
+
+                div.onclick = function () {
+                    if (f.type == 'dir') {
+                        loadDirectory(f.path);
+                    } else {
+                        selectFile(f.path);
+                    }
+                };
+                list.appendChild(div);
+            });
         }
 
     </script>
