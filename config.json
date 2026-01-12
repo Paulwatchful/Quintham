@@ -1,0 +1,11 @@
+{
+  "name": "Quintham Plugin",
+  "shortName": "quintham",
+  "version": "0.0.2",
+  "author": "Paul Greenwood",
+  "description": "Quintham Toolkit management plugin.",
+  "hasAdminPanel": false,
+  "meshCentralCompat": ">=1.0.0",
+  "type": "plugin",
+  "status": 1
+}
