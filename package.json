@@ -1,9 +1,0 @@
-{
-  "name": "quintham",
-  "version": "0.0.1",
-  "description": "Quintham Toolkit management plugin.",
-  "main": "quintham.js",
-  "author": "Paul Greenwood",
-  "license": "Apache-2.0",
-  "dependencies": {}
-}

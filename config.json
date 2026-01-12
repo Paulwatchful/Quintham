@@ -1,20 +1,18 @@
 {
-  "name": "Quintham Plugin",
+  "name": "Quintham",
   "shortName": "quintham",
-  "version": "0.0.3",
+  "version": "0.0.1",
   "author": "Paul Greenwood",
-  "description": "Quintham Toolkit management plugin.",
+  "description": "Quintham Database Manager & Script Runner",
   "hasAdminPanel": false,
-  "homepage": "https://github.com/Paulwatchful/Quintham",
-  "changelogUrl": "https://raw.githubusercontent.com/Paulwatchful/Quintham/main/changelog.md",
-  "configUrl": "https://raw.githubusercontent.com/Paulwatchful/Quintham/main/config.json",
-  "downloadUrl": "https://github.com/Paulwatchful/Quintham/archive/main.zip",
+  "homepage": "https://github.com/ryanblenis/MeshCentral-ScriptTask",
+  "changelogUrl": "https://raw.githubusercontent.com/ryanblenis/MeshCentral-ScriptTask/master/changelog.md",
+  "configUrl": "https://raw.githubusercontent.com/ryanblenis/MeshCentral-ScriptTask/master/config.json",
+  "downloadUrl": "https://github.com/ryanblenis/MeshCentral-ScriptTask/archive/master.zip",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Paulwatchful/Quintham.git"
+    "url": "https://github.com/ryanblenis/MeshCentral-ScriptTask.git"
   },
-  "versionHistoryUrl": "https://api.github.com/repos/Paulwatchful/Quintham/tags",
-  "meshCentralCompat": ">=1.1.35",
-  "status": 1,
-  "type": "plugin"
+  "versionHistoryUrl": "https://api.github.com/repos/ryanblenis/MeshCentral-ScriptTask/tags",
+  "meshCentralCompat": ">=1.1.35"
 }

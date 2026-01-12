@@ -1,304 +1,768 @@
+/** 
+* @description MeshCentral ScriptTask
+* @author Ryan Blenis
+* @copyright 
+* @license Apache-2.0
+*/
+
 "use strict";
 
 module.exports.quintham = function (parent) {
-  var obj = {};
-  obj.parent = parent;
+    var obj = {};
+    obj.parent = parent;
+    obj.meshServer = parent.parent;
+    obj.db = null;
+    obj.intervalTimer = null;
+    obj.debug = obj.meshServer.debug;
+    obj.VIEWS = __dirname + '/views/';
+    obj.exports = [
+        'onDeviceRefreshEnd',
+        'resizeContent',
+        'historyData',
+        'variableData',
+        'malix_triggerOption'
+    ];
 
-  // Server-side state to track paths per node
-  obj.dbPaths = {};
-
-  obj.exports = [
-    "onDeviceRefreshEnd"
-  ];
-
-  // This function is called when the device page is displayed or refreshed
-  obj.onDeviceRefreshEnd = function (id, panel, overlay, node, userRights, ep, user) {
-    // Only show on the "General" panel
-
-    var content = `
-            <div class="panel panel-default" style="margin-top: 10px;">
-                <div class="panel-heading"><h3 class="panel-title">Quintham Toolkit</h3></div>
-                <div class="panel-body">
-                    <div><strong>DB Path:</strong> <span id="quintham_db_path">Not Found</span></div>
-                    <br/>
-                    <button class="btn btn-default" onclick="plugin_quintham.findDb('${node._id}')">Find Database</button>
-                    <button class="btn btn-default" id="btn_quintham_edit" disabled onclick="plugin_quintham.editDb()">Edit Database</button>
-                    <button class="btn btn-warning" onclick="plugin_quintham.updateApp('${node._id}')">Update App</button>
-                    <div id="plugin_quintham_status" style="margin-top:10px; color:#555;"></div>
-                </div>
-            </div>
-
-            <!-- Editor Modal (Hidden by default) -->
-            <div id="quintham_editor_modal" style="display:none; position:fixed; top:50px; left:50px; right:50px; bottom:50px; background:white; border:1px solid #ccc; z-index:9999; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.5);">
-                <div style="height:100%; display:flex; flex-direction:column;">
-                    <div style="flex:0 0 auto; margin-bottom:10px;">
-                        <h3>Database Editor</h3>
-                        <button class="btn btn-success" onclick="plugin_quintham.saveDbChange()">Save Changes to Device</button>
-                        <button class="btn btn-danger" onclick="$('#quintham_editor_modal').hide()">Close</button>
-                        <span id="editor_status" style="margin-left:10px;"></span>
-                    </div>
-                    <div style="flex:0 0 auto; margin-bottom:10px;">
-                         <textarea id="quintham_sql_query" style="width:100%; height:80px;" placeholder="SELECT * FROM tablename LIMIT 10"></textarea>
-                         <button class="btn btn-primary btn-xs" onclick="plugin_quintham.runQuery()">Run SQL</button>
-                         List Tables: <select id="quintham_tables" onchange="plugin_quintham.loadTable(this.value)"><option value="">Select...</option></select>
-                    </div>
-                    <div style="flex:1 1 auto; overflow:auto; border:1px solid #eee;">
-                        <div id="quintham_query_results"></div>
-                    </div>
-                </div>
-            </div>
-
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
-            <script>
-                var plugin_quintham = {
-                    nodeId: '${node._id}',
-                    dbPath: null,
-                    db: null,
-                    SQL: null,
-                    
-                    init: function() {
-                        // Init SQL.js
-                        if (typeof initSqlJs === 'function') {
-                            initSqlJs({ locateFile: filename => \`https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/\${filename}\` }).then(function(sql_obj){
-                                plugin_quintham.SQL = sql_obj;
-                            });
-                        }
-                    },
-
-                    findDb: function(nid) {
-                        $('#plugin_quintham_status').text('Searching...');
-                        meshcentral.send({ action: 'plugin', plugin: 'quintham', method: 'findDb', nodeId: nid });
-                    },
-                    
-                    updateApp: function(nid) {
-                        if(!confirm('Update Quintham App?')) return;
-                        $('#plugin_quintham_status').text('Initiating update...');
-                        meshcentral.send({ action: 'plugin', plugin: 'quintham', method: 'updateApp', nodeId: nid });
-                    },
-
-                    editDb: function() {
-                        if (!this.dbPath) return alert('Find database first.');
-                        $('#plugin_quintham_status').text('Downloading Database...');
-                        $('#editor_status').text('Loading...');
-                        meshcentral.send({ action: 'plugin', plugin: 'quintham', method: 'fetchDb', nodeId: this.nodeId, path: this.dbPath });
-                    },
-
-                    loadDbFromBase64: function(b64) {
-                        try {
-                            var binary_string = window.atob(b64);
-                            var len = binary_string.length;
-                            var bytes = new Uint8Array(len);
-                            for (var i = 0; i < len; i++) { bytes[i] = binary_string.charCodeAt(i); }
-                            
-                            this.db = new this.SQL.Database(bytes);
-                            
-                            $('#quintham_editor_modal').show();
-                            $('#plugin_quintham_status').text('Database Loaded.');
-                            $('#editor_status').text('Ready.');
-                            this.refreshTables();
-                        } catch(e) { console.error(e); alert('Failed to load DB: '+e); }
-                    },
-
-                    refreshTables: function() {
-                        var res = this.db.exec("SELECT name FROM sqlite_master WHERE type='table'");
-                        var sel = $('#quintham_tables');
-                        sel.empty();
-                        sel.append('<option>Select Table...</option>');
-                        if (res.length > 0 && res[0].values) {
-                            res[0].values.forEach(v => {
-                                sel.append('<option value="'+v[0]+'">'+v[0]+'</option>');
-                            });
-                        }
-                    },
-
-                    loadTable: function(tbl) {
-                        if(!tbl) return;
-                        $('#quintham_sql_query').val('SELECT * FROM ' + tbl + ' LIMIT 100');
-                        this.runQuery();
-                    },
-
-                    runQuery: function() {
-                        var sql = $('#quintham_sql_query').val();
-                        try {
-                            var res = this.db.exec(sql);
-                            this.renderResults(res);
-                        } catch(e) {
-                            $('#quintham_query_results').html('<p style="color:red">Error: '+e+'</p>');
-                        }
-                    },
-
-                    renderResults: function(res) {
-                         var div = $('#quintham_query_results');
-                         div.empty();
-                         if (!res || res.length === 0) { div.text('No results.'); return; }
-                         
-                         var table = '<table class="table table-striped table-condensed"><thead><tr>';
-                         res[0].columns.forEach(c => table += '<th>'+c+'</th>');
-                         table += '</tr></thead><tbody>';
-                         
-                         res[0].values.forEach(row => {
-                             table += '<tr>';
-                             row.forEach(val => table += '<td>'+(val === null ? 'NULL' : val)+'</td>');
-                             table += '</tr>';
-                         });
-                         table += '</tbody></table>';
-                         div.html(table);
-                    },
-
-                    saveDbChange: function() {
-                         if(!confirm('Overwrite remote database with these changes? This will create a .bak on the remote device first.')) return;
-                         $('#editor_status').text('Exporting...');
-                         var data = this.db.export();
-                         
-                         // Convert to Base64
-                         var binary = '';
-                         var len = data.byteLength;
-                         for (var i = 0; i < len; i++) { binary += String.fromCharCode(data[i]); }
-                         var b64 = window.btoa(binary);
-                         
-                         $('#editor_status').text('Uploading...');
-                         meshcentral.send({ action: 'plugin', plugin: 'quintham', method: 'saveDb', nodeId: this.nodeId, path: this.dbPath, data: b64 });
-                    }
-                };
-
-                plugin_quintham.init();
-
-                // Listen for messages
-                if (typeof server != 'undefined' && server.on) {
-                     server.on('plugin', function(data) {
-                         if (data.plugin !== 'quintham') return;
-                         
-                         if (data.method == 'dbLocationFound') {
-                             plugin_quintham.dbPath = data.path;
-                             $('#quintham_db_path').text(data.path);
-                             $('#btn_quintham_edit').prop('disabled', false);
-                             $('#plugin_quintham_status').text('Database found.');
-                         }
-                         
-                         if (data.method == 'dbDatareceived') {
-                             plugin_quintham.loadDbFromBase64(data.data);
-                         }
-
-                         if (data.method == 'saveComplete') {
-                             alert('Database Saved Successfully!');
-                             $('#editor_status').text('Saved.');
-                         }
-                     });
-                }
-            </script>
-        `;
-
-    return content;
-  };
-
-  // Handle messages from the web UI
-  obj.onMessage = function (user, domain, req, args) {
-    if (args.action === 'plugin' && args.plugin === 'quintham') {
-      if (args.method === 'findDb') {
-        findDatabase(args.nodeId, user, domain);
-      } else if (args.method === 'updateApp') {
-        updateApp(args.nodeId, user, domain);
-      } else if (args.method === 'fetchDb') {
-        fetchDatabase(args.nodeId, args.path, user);
-      } else if (args.method === 'saveDb') {
-        saveDatabase(args.nodeId, args.path, args.data, user);
-      }
-      return true;
+    obj.malix_triggerOption = function (selectElem) {
+        selectElem.options.add(new Option("Quintham - Run Script", "quintham_runscript"));
     }
-    return false;
-  };
+    obj.malix_triggerFields_quintham_runscript = function () {
 
-  function findDatabase(nodeId, user, domain) {
-    var agent = parent.webserver.wsagents[nodeId];
-    if (!agent) return;
+    }
+    obj.resetQueueTimer = function () {
+        clearTimeout(obj.intervalTimer);
+        obj.intervalTimer = setInterval(obj.queueRun, 1 * 60 * 1000); // every minute
+    };
 
-    const psScript = `
-$ErrorActionPreference = 'SilentlyContinue'
-$path = Get-ChildItem -Path "C:\\Users\\*\\AppData\\Local\\Packages\\Watchful_9nnya97m1bay6\\LocalCache\\Local\\Watchful\\database.db3" | Select-Object -ExpandProperty FullName -First 1
-if ($path) {
-  Write-Host "QUINTHAM_DB_PATH:$path"
-} else {
-  Write-Host "QUINTHAM_DB_PATH:NOT_FOUND"
-}
-`;
-    try { agent.send(JSON.stringify({ action: 'msg', type: 'ps', value: psScript })); } catch (e) { }
-  }
+    obj.server_startup = function () {
+        obj.meshServer.pluginHandler.quintham_db = require(__dirname + '/db.js').CreateDB(obj.meshServer);
+        obj.db = obj.meshServer.pluginHandler.quintham_db;
+        obj.resetQueueTimer();
+    };
 
-  function updateApp(nodeId, user, domain) {
-    var agent = parent.webserver.wsagents[nodeId];
-    if (!agent) return;
-    const psScript = `winget upgrade --id 9NNYA97M1BAY6 --accept-source-agreements --accept-package-agreements`;
-    agent.send(JSON.stringify({ action: 'msg', type: 'ps', value: psScript }));
-  }
+    obj.onDeviceRefreshEnd = function () {
+        pluginHandler.registerPluginTab({
+            tabTitle: 'Quintham',
+            tabId: 'pluginQuintham'
+        });
+        QA('pluginQuintham', '<iframe id="pluginIframeQuintham" style="width: 100%; height: 700px; overflow: auto" scrolling="yes" frameBorder=0 src="/pluginadmin.ashx?pin=quintham&user=1" />');
+    };
+    // may not be needed, saving for later. Can be called to resize iFrame
+    obj.resizeContent = function () {
+        var iFrame = document.getElementById('pluginIframeQuintham');
+        var newHeight = 700;
+        //var sHeight = iFrame.contentWindow.document.body.scrollHeight;
+        //if (sHeight > newHeight) newHeight = sHeight;
+        //if (newHeight > 1600) newHeight = 1600;
+        iFrame.style.height = newHeight + 'px';
+    };
 
-  function fetchDatabase(nodeId, path, user) {
-    var agent = parent.webserver.wsagents[nodeId];
-    if (!agent || !path) return;
-    // Limit size? We assume it's small.
-    // PowerShell to output Base64
-    const psScript = `
-$ErrorActionPreference = 'SilentlyContinue'
-$b = [System.IO.File]::ReadAllBytes("${path}")
-$b64 = [System.Convert]::ToBase64String($b)
-Write-Host "QUINTHAM_DB_DATA:$b64"
-`;
-    agent.send(JSON.stringify({ action: 'msg', type: 'ps', value: psScript }));
-  }
+    obj.queueRun = async function () {
+        var onlineAgents = Object.keys(obj.meshServer.webserver.wsagents);
+        //obj.debug('ScriptTask', 'Queue Running', Date().toLocaleString(), 'Online agents: ', onlineAgents);
 
-  function saveDatabase(nodeId, path, b64Data, user) {
-    var agent = parent.webserver.wsagents[nodeId];
-    if (!agent || !path) return;
+        obj.db.getPendingJobs(onlineAgents)
+            .then((jobs) => {
+                if (jobs.length == 0) return;
+                //@TODO check for a large number and use taskLimiter to queue the jobs
+                jobs.forEach(job => {
+                    obj.db.get(job.scriptId)
+                        .then(async (script) => {
+                            script = script[0];
+                            var foundVars = script.content.match(/#(.*?)#/g);
+                            var replaceVars = {};
+                            if (foundVars != null && foundVars.length > 0) {
+                                var foundVarNames = [];
+                                foundVars.forEach(fv => {
+                                    foundVarNames.push(fv.replace(/^#+|#+$/g, ''));
+                                });
 
-    // Split b64Data if too large? 
-    // Max command size in some agents is limited. 
-    // IF DATA IS LARGE, THIS WILL FAIL.
-    // Assuming small DB (<100KB - 1MB).
-    // If large, we need 'upload' action.
+                                var limiters = {
+                                    scriptId: job.scriptId,
+                                    nodeId: job.node,
+                                    meshId: obj.meshServer.webserver.wsagents[job.node]['dbMeshKey'],
+                                    names: foundVarNames
+                                };
+                                var finvals = await obj.db.getVariables(limiters);
+                                var ordering = { 'global': 0, 'script': 1, 'mesh': 2, 'node': 3 }
+                                finvals.sort((a, b) => {
+                                    return (ordering[a.scope] - ordering[b.scope])
+                                        || a.name.localeCompare(b.name);
+                                });
+                                finvals.forEach(fv => {
+                                    replaceVars[fv.name] = fv.value;
+                                });
+                                replaceVars['GBL:meshId'] = obj.meshServer.webserver.wsagents[job.node]['dbMeshKey'];
+                                replaceVars['GBL:nodeId'] = job.node;
+                                //console.log('FV IS', finvals);
+                                //console.log('RV IS', replaceVars);
+                            }
+                            var dispatchTime = Math.floor(new Date() / 1000);
+                            var jObj = {
+                                action: 'plugin',
+                                plugin: 'quintham',
+                                pluginaction: 'triggerJob',
+                                jobId: job._id,
+                                scriptId: job.scriptId,
+                                replaceVars: replaceVars,
+                                scriptHash: script.contentHash,
+                                dispatchTime: dispatchTime
+                            };
+                            //obj.debug('ScriptTask', 'Sending job to agent');
+                            try {
+                                obj.meshServer.webserver.wsagents[job.node].send(JSON.stringify(jObj));
+                                obj.db.update(job._id, { dispatchTime: dispatchTime });
+                            } catch (e) { }
+                        })
+                        .catch(e => console.log('PLUGIN: ScriptTask: Could not dispatch job.', e));
+                });
+            })
+            .then(() => {
+                obj.makeJobsFromSchedules();
+                obj.cleanHistory();
+            })
+            .catch(e => { console.log('PLUGIN: ScriptTask: Queue Run Error: ', e); });
+    };
 
-    // For robustness, we will create a temp file with the Base64 then decode it.
-    const psScript = `
-$ErrorActionPreference = 'SilentlyContinue'
-$path = "${path}"
-Copy-Item $path "$path.bak" -Force
-$bytes = [System.Convert]::FromBase64String("${b64Data}")
-[System.IO.File]::WriteAllBytes($path, $bytes)
-Write-Host "QUINTHAM_SAVE_COMPLETE"
-`;
-    agent.send(JSON.stringify({ action: 'msg', type: 'ps', value: psScript }));
-  }
+    obj.cleanHistory = function () {
+        if (Math.round(Math.random() * 100) == 99) {
+            //obj.debug('Plugin', 'ScriptTask', 'Running history cleanup');
+            obj.db.deleteOldHistory();
+        }
+    };
 
-  // Hook into agent console output
-  if (parent.itemEventBus) {
-    parent.itemEventBus.on('agentconsole', function (data) {
-      if (!data.value) return;
+    obj.downloadFile = function (req, res, user) {
+        var id = req.query.dl;
+        obj.db.get(id)
+            .then(found => {
+                if (found.length != 1) { res.sendStatus(401); return; }
+                var file = found[0];
+                res.setHeader('Content-disposition', 'attachment; filename=' + file.name);
+                res.setHeader('Content-type', 'text/plain');
+                //var fs = require('fs');
+                res.send(file.content);
+            });
+    };
 
-      if (data.value.indexOf('QUINTHAM_DB_PATH:') > -1) {
-        var path = data.value.split('QUINTHAM_DB_PATH:')[1].trim();
-        notifyClient(data.nodeid, { method: 'dbLocationFound', path: path });
-      }
+    obj.updateFrontEnd = async function (ids) {
+        if (ids.scriptId != null) {
+            var scriptHistory = null;
+            obj.db.getJobScriptHistory(ids.scriptId)
+                .then((sh) => {
+                    scriptHistory = sh;
+                    return obj.db.getJobSchedulesForScript(ids.scriptId);
+                })
+                .then((scriptSchedule) => {
+                    var targets = ['*', 'server-users'];
+                    obj.meshServer.DispatchEvent(targets, obj, { nolog: true, action: 'plugin', plugin: 'quintham', pluginaction: 'historyData', scriptId: ids.scriptId, nodeId: null, scriptHistory: scriptHistory, nodeHistory: null, scriptSchedule: scriptSchedule });
+                });
+        }
+        if (ids.nodeId != null) {
+            var nodeHistory = null;
+            obj.db.getJobNodeHistory(ids.nodeId)
+                .then((nh) => {
+                    nodeHistory = nh;
+                    return obj.db.getJobSchedulesForNode(ids.nodeId);
+                })
+                .then((nodeSchedule) => {
+                    var targets = ['*', 'server-users'];
+                    obj.meshServer.DispatchEvent(targets, obj, { nolog: true, action: 'plugin', plugin: 'quintham', pluginaction: 'historyData', scriptId: null, nodeId: ids.nodeId, scriptHistory: null, nodeHistory: nodeHistory, nodeSchedule: nodeSchedule });
+                });
+        }
+        if (ids.tree === true) {
+            obj.db.getScriptTree()
+                .then((tree) => {
+                    var targets = ['*', 'server-users'];
+                    obj.meshServer.DispatchEvent(targets, obj, { nolog: true, action: 'plugin', plugin: 'quintham', pluginaction: 'newScriptTree', tree: tree });
+                });
+        }
+        if (ids.variables === true) {
+            obj.db.getVariables()
+                .then((vars) => {
+                    var targets = ['*', 'server-users'];
+                    obj.meshServer.DispatchEvent(targets, obj, { nolog: true, action: 'plugin', plugin: 'quintham', pluginaction: 'variableData', vars: vars });
+                });
+        }
+    };
 
-      // Warning: Default console buffer might be truncated if DB is large.
-      // This approach is risky for large files but fits the "plugin" model without binary streams.
-      else if (data.value.indexOf('QUINTHAM_DB_DATA:') > -1) {
-        var b64 = data.value.split('QUINTHAM_DB_DATA:')[1].trim();
-        notifyClient(data.nodeid, { method: 'dbDatareceived', data: b64 });
-      }
+    obj.handleAdminReq = function (req, res, user) {
+        if ((user.siteadmin & 0xFFFFFFFF) == 1 && req.query.admin == 1) {
+            // admin wants admin, grant
+            var vars = {};
+            res.render(obj.VIEWS + 'admin', vars);
+            return;
+        } else if (req.query.admin == 1 && (user.siteadmin & 0xFFFFFFFF) == 0) {
+            // regular user wants admin
+            res.sendStatus(401);
+            return;
+        } else if (req.query.user == 1) {
+            // regular user wants regular access, grant
+            if (req.query.dl != null) return obj.downloadFile(req, res, user);
+            var vars = {};
 
-      else if (data.value.indexOf('QUINTHAM_SAVE_COMPLETE') > -1) {
-        notifyClient(data.nodeid, { method: 'saveComplete' });
-      }
-    });
-  }
+            if (req.query.edit == 1) { // edit script
+                if (req.query.id == null) return res.sendStatus(401);
+                obj.db.get(req.query.id)
+                    .then((scripts) => {
+                        if (scripts[0].filetype == 'proc') {
+                            vars.procData = JSON.stringify(scripts[0]);
+                            res.render(obj.VIEWS + 'procedit', vars);
+                        } else {
+                            vars.scriptData = JSON.stringify(scripts[0]);
+                            res.render(obj.VIEWS + 'scriptedit', vars);
+                        }
+                    });
+                return;
+            } else if (req.query.schedule == 1) {
+                var vars = {};
+                res.render(obj.VIEWS + 'schedule', vars);
+                return;
+            } else if (req.query.database == 1) {
+                var vars = {};
+                res.render(obj.VIEWS + 'database', vars);
+                return;
+            }
+            // default user view (tree)
+            vars.scriptTree = 'null';
+            obj.db.getScriptTree()
+                .then(tree => {
+                    vars.scriptTree = JSON.stringify(tree);
+                    res.render(obj.VIEWS + 'user', vars);
+                });
+            return;
+        } else if (req.query.include == 1) {
+            switch (req.query.path.split('/').pop().split('.').pop()) {
+                case 'css': res.contentType('text/css'); break;
+                case 'js': res.contentType('text/javascript'); break;
+            }
+            res.sendFile(__dirname + '/includes/' + req.query.path); // don't freak out. Express covers any path issues.
+            return;
+        }
+        res.sendStatus(401);
+        return;
+    };
 
-  function notifyClient(nodeId, msg) {
-    msg.plugin = 'quintham';
-    msg.action = 'plugin';
-    parent.wss.clients.forEach(function (client) {
-      // We really should filter by checking if the client is looking at this node
-      // client.user, client.nodeId ... 
-      try { client.send(JSON.stringify(msg)); } catch (e) { }
-    });
-  }
+    obj.historyData = function (message) {
+        if (typeof pluginHandler.quintham.loadHistory == 'function') pluginHandler.quintham.loadHistory(message);
+        if (typeof pluginHandler.quintham.loadSchedule == 'function') pluginHandler.quintham.loadSchedule(message);
+    };
 
-  return obj;
+    obj.variableData = function (message) {
+        if (typeof pluginHandler.quintham.loadVariables == 'function') pluginHandler.quintham.loadVariables(message);
+    };
+
+    obj.determineNextJobTime = function (s) {
+        var nextTime = null;
+        var nowTime = Math.floor(new Date() / 1000);
+
+        // special case: we've reached the end of our run
+        if (s.endAt !== null && s.endAt <= nowTime) {
+            return nextTime;
+        }
+
+        switch (s.recur) {
+            case 'once':
+                if (s.nextRun == null) nextTime = s.startAt;
+                else nextTime = null;
+                break;
+            case 'minutes':
+                /*var lRun = s.nextRun || nowTime;
+                if (lRun == null) lRun = nowTime;
+                nextTime = lRun + (s.interval * 60);
+                if (s.startAt > nextTime) nextTime = s.startAt;*/
+                if (s.nextRun == null) { // hasn't run yet, set to start time
+                    nextTime = s.startAt;
+                    break;
+                }
+                nextTime = s.nextRun + (s.interval * 60);
+                // this prevents "catch-up" tasks being scheduled if an endpoint is offline for a long period of time
+                // e.g. always make sure the next scheduled time is relevant to the scheduled interval, but in the future
+                if (nextTime < nowTime) {
+                    // initially I was worried about this causing event loop lockups
+                    // if there was a long enough time gap. Testing over 50 years of backlog for a 3 min interval
+                    // still ran under a fraction of a second. Safe to say this approach is safe! (~8.5 million times)
+                    while (nextTime < nowTime) {
+                        nextTime = nextTime + (s.interval * 60);
+                    }
+                }
+                if (s.startAt > nextTime) nextTime = s.startAt;
+                break;
+            case 'hourly':
+                if (s.nextRun == null) { // hasn't run yet, set to start time
+                    nextTime = s.startAt;
+                    break;
+                }
+                nextTime = s.nextRun + (s.interval * 60 * 60);
+                if (nextTime < nowTime) {
+                    while (nextTime < nowTime) {
+                        nextTime = nextTime + (s.interval * 60 * 60);
+                    }
+                }
+                if (s.startAt > nextTime) nextTime = s.startAt;
+                break;
+            case 'daily':
+                if (s.nextRun == null) { // hasn't run yet, set to start time
+                    nextTime = s.startAt;
+                    break;
+                }
+                nextTime = s.nextRun + (s.interval * 60 * 60 * 24);
+                if (nextTime < nowTime) {
+                    while (nextTime < nowTime) {
+                        nextTime = nextTime + (s.interval * 60 * 60 * 24);
+                    }
+                }
+                if (s.startAt > nextTime) nextTime = s.startAt;
+                break;
+            case 'weekly':
+                var tempDate = new Date();
+                var nowDate = new Date(tempDate.getFullYear(), tempDate.getMonth(), tempDate.getDate());
+
+                if (s.daysOfWeek.length == 0) {
+                    nextTime = null;
+                    break;
+                }
+                s.daysOfWeek = s.daysOfWeek.map(el => Number(el));
+                var baseTime = s.startAt;
+                //console.log('dow is ', s.daysOfWeek);
+                var lastDayOfWeek = Math.max(...s.daysOfWeek);
+                var startX = 0;
+                //console.log('ldow is ', lastDayOfWeek);
+                if (s.nextRun != null) {
+                    baseTime = s.nextRun;
+                    //console.log('basetime 2: ', baseTime);
+                    if (nowDate.getDay() == lastDayOfWeek) {
+                        baseTime = baseTime + (s.interval * 604800) - (lastDayOfWeek * 86400);
+                        //console.log('basetime 3: ', baseTime);
+                    }
+                    startX = 0;
+                } else if (s.startAt < nowTime) {
+                    baseTime = Math.floor(nowDate.getTime() / 1000);
+                    //console.log('basetime 4: ', baseTime);
+                }
+                //console.log('startX is: ', startX);
+                //var secondsFromMidnight = nowTimeDate.getSeconds() + (nowTimeDate.getMinutes() * 60) + (nowTimeDate.getHours() * 60 * 60);
+                //console.log('seconds from midnight: ', secondsFromMidnight);
+                //var dBaseTime = new Date(0); dBaseTime.setUTCSeconds(baseTime);
+                //var dMidnight = new Date(dBaseTime.getFullYear(), dBaseTime.getMonth(), dBaseTime.getDate());
+                //baseTime = Math.floor(dMidnight.getTime() / 1000);
+                for (var x = startX; x <= 7; x++) {
+                    var checkDate = baseTime + (86400 * x);
+                    var d = new Date(0); d.setUTCSeconds(checkDate);
+                    var dm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+                    console.log('testing date: ', dm.toLocaleString()); // dMidnight.toLocaleString());
+                    //console.log('if break check :', (s.daysOfWeek.indexOf(d.getDay()) !== -1 && checkDate >= nowTime));
+                    //console.log('checkDate vs nowTime: ', (checkDate - nowTime), ' if positive, nowTime is less than checkDate');
+                    if (s.nextRun == null && s.daysOfWeek.indexOf(dm.getDay()) !== -1 && dm.getTime() >= nowDate.getTime()) break;
+                    if (s.daysOfWeek.indexOf(dm.getDay()) !== -1 && dm.getTime() > nowDate.getTime()) break;
+                    //if (s.daysOfWeek.indexOf(d.getDay()) !== -1 && Math.floor(d.getTime() / 1000) >= nowTime) break;
+                }
+                var sa = new Date(0); sa.setUTCSeconds(s.startAt);
+                var sad = new Date(sa.getFullYear(), sa.getMonth(), sa.getDate());
+                var diff = (sa.getTime() - sad.getTime()) / 1000;
+                nextTime = Math.floor(dm.getTime() / 1000) + diff;
+                //console.log('next schedule is ' + d.toLocaleString());
+                break;
+            default:
+                nextTime = null;
+                break;
+        }
+
+        if (s.endAt != null && nextTime > s.endAt) nextTime = null; // if the next time reaches the bound of the endAt time, nullify
+
+        return nextTime;
+    };
+
+    obj.makeJobsFromSchedules = function (scheduleId) {
+        //obj.debug('ScriptTask', 'makeJobsFromSchedules starting');
+        return obj.db.getSchedulesDueForJob(scheduleId)
+            .then(schedules => {
+                //obj.debug('ScriptTask', 'Found ' + schedules.length + ' schedules to process. Current time is: ' + Math.floor(new Date() / 1000));
+                if (schedules.length) {
+                    schedules.forEach(s => {
+                        var nextJobTime = obj.determineNextJobTime(s);
+                        var nextJobScheduled = false;
+                        if (nextJobTime === null) {
+                            //obj.debug('ScriptTask', 'Removing Job Schedule for', JSON.stringify(s));
+                            obj.db.removeJobSchedule(s._id);
+                        } else {
+                            //obj.debug('ScriptTask', 'Scheduling Job for', JSON.stringify(s));
+                            obj.db.get(s.scriptId)
+                                .then(scripts => {
+                                    // if a script is scheduled to run, but a previous run hasn't completed, 
+                                    // don't schedule another job for the same (device probably offline).
+                                    // results in the minimum jobs running once an agent comes back online.
+                                    return obj.db.getIncompleteJobsForSchedule(s._id)
+                                        .then((jobs) => {
+                                            if (jobs.length > 0) { /* obj.debug('Plugin', 'ScriptTask', 'Skipping job creation'); */ return Promise.resolve(); }
+                                            else { /* obj.debug('Plugin', 'ScriptTask', 'Creating new job'); */ nextJobScheduled = true; return obj.db.addJob({ scriptId: s.scriptId, scriptName: scripts[0].name, node: s.node, runBy: s.scheduledBy, dontQueueUntil: nextJobTime, jobSchedule: s._id }); }
+                                        });
+                                })
+                                .then(() => {
+
+                                    if (nextJobScheduled) { /* obj.debug('Plugin', 'ScriptTask', 'Updating nextRun time'); */ return obj.db.update(s._id, { nextRun: nextJobTime }); }
+                                    else { /* obj.debug('Plugin', 'ScriptTask', 'NOT updating nextRun time'); */ return Promise.resolve(); }
+                                })
+                                .then(() => {
+                                    obj.updateFrontEnd({ scriptId: s.scriptId, nodeId: s.node });
+                                })
+                                .catch((e) => { console.log('PLUGIN: ScriptTask: Error managing job schedules: ', e); });
+                        }
+                    });
+                }
+            });
+    };
+
+    obj.deleteElement = function (command) {
+        var delObj = null;
+        obj.db.get(command.id)
+            .then((found) => {
+                var file = found[0];
+                delObj = { ...{}, ...found[0] };
+                return file;
+            })
+            .then((file) => {
+                if (file.type == 'folder') return obj.db.deleteByPath(file.path); //@TODO delete schedules for scripts within folders
+                if (file.type == 'script') return obj.db.deleteSchedulesForScript(file._id);
+                if (file.type == 'jobSchedule') return obj.db.deletePendingJobsForSchedule(file._id);
+            })
+            .then(() => {
+                return obj.db.delete(command.id)
+            })
+            .then(() => {
+                var updateObj = { tree: true };
+                if (delObj.type == 'jobSchedule') {
+                    updateObj.scriptId = delObj.scriptId;
+                    updateObj.nodeId = delObj.node;
+                }
+                return obj.updateFrontEnd(updateObj);
+            })
+            .catch(e => { console.log('PLUGIN: ScriptTask: Error deleting ', e.stack); });
+    };
+
+    obj.serveraction = function (command, myparent, grandparent) {
+        switch (command.pluginaction) {
+            case 'addScript':
+                obj.db.addScript(command.name, command.content, command.path, command.filetype)
+                    .then(() => {
+                        obj.updateFrontEnd({ tree: true });
+                    });
+                break;
+            case 'new':
+                var parent_path = '';
+                var new_path = '';
+                obj.db.get(command.parent_id)
+                    .then(found => {
+                        if (found.length > 0) {
+                            var file = found[0];
+                            parent_path = file.path;
+                        } else {
+                            parent_path = 'Shared';
+                        }
+                    })
+                    .then(() => {
+                        obj.db.addScript(command.name, '', parent_path, command.filetype)
+                    })
+                    .then(() => {
+                        obj.updateFrontEnd({ tree: true });
+                    });
+                break;
+            case 'rename':
+                obj.db.get(command.id)
+                    .then((docs) => {
+                        var doc = docs[0];
+                        if (doc.type == 'folder') {
+                            console.log('old', doc.path, 'new', doc.path.replace(doc.path, command.name));
+                            return obj.db.update(command.id, { path: doc.path.replace(doc.name, command.name) })
+                                .then(() => { // update sub-items
+                                    return obj.db.getByPath(doc.path)
+                                })
+                                .then((found) => {
+                                    if (found.length > 0) {
+                                        var proms = [];
+                                        found.forEach(f => {
+                                            proms.push(obj.db.update(f._id, { path: doc.path.replace(doc.name, command.name) }));
+                                        })
+                                        return Promise.all(proms);
+                                    }
+                                })
+                        } else {
+                            return Promise.resolve();
+                        }
+                    })
+                    .then(() => {
+                        obj.db.update(command.id, { name: command.name })
+                    })
+                    .then(() => {
+                        return obj.db.updateScriptJobName(command.id, command.name);
+                    })
+                    .then(() => {
+                        obj.updateFrontEnd({ scriptId: command.id, nodeId: command.currentNodeId, tree: true });
+                    });
+                break;
+            case 'move':
+                var toPath = null, fromPath = null, parentType = null;
+                obj.db.get(command.to)
+                    .then(found => { // get target data
+                        if (found.length > 0) {
+                            var file = found[0];
+                            toPath = file.path;
+                        } else throw Error('Target destination not found');
+                    })
+                    .then(() => { // get item to be moved
+                        return obj.db.get(command.id);
+                    })
+                    .then((found) => { // set item to new location
+                        var file = found[0];
+                        if (file.type == 'folder') {
+                            fromPath = file.path;
+                            toPath += '/' + file.name;
+                            parentType = 'folder';
+                            if (file.name == 'Shared' && file.path == 'Shared') throw Error('Cannot move top level directory: Shared');
+                        }
+                        return obj.db.update(command.id, { path: toPath });
+                    })
+                    .then(() => { // update sub-items
+                        return obj.db.getByPath(fromPath)
+                    })
+                    .then((found) => {
+                        if (found.length > 0) {
+                            var proms = [];
+                            found.forEach(f => {
+                                proms.push(obj.db.update(f._id, { path: toPath }));
+                            })
+                            return Promise.all(proms);
+                        }
+                    })
+                    .then(() => {
+                        return obj.updateFrontEnd({ tree: true });
+                    })
+                    .catch(e => { console.log('PLUGIN: ScriptTask: Error moving ', e.stack); });
+                break;
+            case 'newFolder':
+                var parent_path = '';
+                var new_path = '';
+
+                obj.db.get(command.parent_id)
+                    .then(found => {
+                        if (found.length > 0) {
+                            var file = found[0];
+                            parent_path = file.path;
+                        } else {
+                            parent_path = 'Shared';
+                        }
+                    })
+                    .then(() => {
+                        new_path = parent_path + '/' + command.name;
+                    })
+                    .then(() => {
+                        return obj.db.addFolder(command.name, new_path);
+                    })
+                    .then(() => {
+                        return obj.updateFrontEnd({ tree: true });
+                    })
+                    .catch(e => { console.log('PLUGIN: ScriptTask: Error creating new folder ', e.stack); });
+                break;
+            case 'delete':
+                obj.deleteElement(command);
+                break;
+            case 'addScheduledJob':
+                /* { 
+                    scriptId: scriptId, 
+                    node: s, 
+                    scheduledBy: myparent.user.name,
+                    recur: command.recur, // [once, minutes, hourly, daily, weekly, monthly]
+                    interval: x,
+                    daysOfWeek: x, // only used for weekly recur val
+                    // onTheXDay: x, // only used for monthly
+                    startAt: x,
+                    endAt: x,
+                    runCountLimit: x,
+                    lastRun: x,
+                    nextRun: x,
+                    type: "scheduledJob"
+                } */
+                var sj = command.schedule;
+
+                var sched = {
+                    scriptId: command.scriptId,
+                    node: null,
+                    scheduledBy: myparent.user.name,
+                    recur: sj.recur,
+                    interval: sj.interval,
+                    daysOfWeek: sj.dayVals,
+                    startAt: sj.startAt,
+                    endAt: sj.endAt,
+                    lastRun: null,
+                    nextRun: null,
+                    type: "jobSchedule"
+                };
+                var sel = command.nodes;
+                var proms = [];
+                if (Array.isArray(sel)) {
+                    sel.forEach((s) => {
+                        var sObj = {
+                            ...sched, ...{
+                                node: s
+                            }
+                        };
+                        proms.push(obj.db.addJobSchedule(sObj));
+                    });
+                } else {
+                    test.push(sObj);
+                    proms.push(obj.db.addJobSchedule(sObj));
+                }
+                Promise.all(proms)
+                    .then(() => {
+                        obj.makeJobsFromSchedules();
+                        return Promise.resolve();
+                    })
+                    .catch(e => { console.log('PLUGIN: ScriptTask: Error adding schedules. The error was: ', e); });
+                break;
+            case 'runScript':
+                var scriptId = command.scriptId;
+                var sel = command.nodes;
+                var proms = [];
+                if (Array.isArray(sel)) {
+                    sel.forEach((s) => {
+                        proms.push(obj.db.addJob({ scriptId: scriptId, node: s, runBy: myparent.user.name }));
+                    });
+                } else {
+                    proms.push(obj.db.addJob({ scriptId: scriptId, node: sel, runBy: myparent.user.name }));
+                }
+                Promise.all(proms)
+                    .then(() => {
+                        return obj.db.get(scriptId);
+                    })
+                    .then(scripts => {
+                        return obj.db.updateScriptJobName(scriptId, scripts[0].name);
+                    })
+                    .then(() => {
+                        obj.resetQueueTimer();
+                        obj.queueRun();
+                        obj.updateFrontEnd({ scriptId: scriptId, nodeId: command.currentNodeId });
+                    });
+                break;
+            case 'getScript':
+                //obj.debug('ScriptTask', 'getScript Triggered', JSON.stringify(command));
+                obj.db.get(command.scriptId)
+                    .then(script => {
+                        myparent.send(JSON.stringify({
+                            action: 'plugin',
+                            plugin: 'quintham',
+                            pluginaction: 'cacheScript',
+                            nodeid: myparent.dbNodeKey,
+                            rights: true,
+                            sessionid: true,
+                            script: script[0]
+                        }));
+                    });
+                break;
+            case 'jobComplete':
+                //obj.debug('ScriptTask', 'jobComplete Triggered', JSON.stringify(command));
+                var jobNodeHistory = null, scriptHistory = null;
+                var jobId = command.jobId, retVal = command.retVal, errVal = command.errVal, dispatchTime = command.dispatchTime;
+                var completeTime = Math.floor(new Date() / 1000);
+                obj.db.update(jobId, {
+                    completeTime: completeTime,
+                    returnVal: retVal,
+                    errorVal: errVal,
+                    dispatchTime: dispatchTime
+                })
+                    .then(() => {
+                        return obj.db.get(jobId)
+                            .then(jobs => {
+                                return Promise.resolve(jobs[0].jobSchedule);
+                            })
+                            .then(sId => {
+                                if (sId == null) return Promise.resolve();
+                                return obj.db.update(sId, { lastRun: completeTime })
+                                    .then(() => {
+                                        obj.makeJobsFromSchedules(sId);
+                                    });
+                            });
+                    })
+                    .then(() => {
+                        obj.updateFrontEnd({ scriptId: command.scriptId, nodeId: myparent.dbNodeKey });
+                    })
+                    .catch(e => { console.log('PLUGIN: ScriptTask: Failed to complete job. ', e); });
+                // update front end by eventing
+                break;
+            case 'loadNodeHistory':
+                obj.updateFrontEnd({ nodeId: command.nodeId });
+                break;
+            case 'loadScriptHistory':
+                obj.updateFrontEnd({ scriptId: command.scriptId });
+                break;
+            case 'editScript':
+                obj.db.update(command.scriptId, { type: command.scriptType, name: command.scriptName, content: command.scriptContent })
+                    .then(() => {
+                        obj.updateFrontEnd({ scriptId: command.scriptId, tree: true });
+                    });
+                break;
+            case 'clearAllPendingJobs':
+                obj.db.deletePendingJobsForNode(myparent.dbNodeKey);
+                break;
+            case 'loadVariables':
+                obj.updateFrontEnd({ variables: true });
+                break;
+            case 'newVar':
+                obj.db.addVariable(command.name, command.scope, command.scopeTarget, command.value)
+                    .then(() => {
+                        obj.updateFrontEnd({ variables: true });
+                    })
+                break;
+            case 'editVar':
+                obj.db.update(command.id, {
+                    name: command.name,
+                    scope: command.scope,
+                    scopeTarget: command.scopeTarget,
+                    value: command.value
+                })
+                    .then(() => {
+                        obj.updateFrontEnd({ variables: true });
+                    })
+                break;
+            case 'deleteVar':
+                obj.db.delete(command.id)
+                    .then(() => {
+                        obj.updateFrontEnd({ variables: true });
+                    })
+                break;
+            case 'checkDatabase':
+            case 'readDatabase':
+            case 'writeDatabase':
+                try {
+                    var cmd = {
+                        action: 'plugin',
+                        plugin: 'quintham',
+                        pluginaction: command.pluginaction,
+                        path: command.path,
+                        data: command.data, // For write
+                        reqId: command.reqId
+                    };
+                    obj.meshServer.webserver.wsagents[command.nodeId].send(JSON.stringify(cmd));
+                } catch (e) { console.log('Quintham: Error sending to agent', e); }
+                break;
+            case 'databaseResponse':
+                // Relay response from Agent to Browser
+                try {
+                    myparent.send(JSON.stringify({
+                        action: 'plugin',
+                        plugin: 'quintham',
+                        pluginaction: 'databaseResponse',
+                        type: command.type,
+                        data: command.data,
+                        error: command.error,
+                        reqId: command.reqId
+                    }));
+                } catch (e) { }
+                break;
+            default:
+                console.log('PLUGIN: ScriptTask: unknown action');
+                break;
+        }
+    };
+
+    return obj;
 }
