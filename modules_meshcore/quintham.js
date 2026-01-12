@@ -218,10 +218,14 @@ function consoleaction(args, rights, sessionid, parent) {
                         return;
                     }
 
-                    files.forEach(function (f) {
+                    var processNext = function (idx) {
+                        if (idx >= files.length) {
+                            sendDirResponse(dir, fileList, args.reqId);
+                            return;
+                        }
+                        var f = files[idx];
                         var fullPath = joinPath(dir, f);
                         fs.stat(fullPath, function (err, stats) {
-                            // Use try-catch inside callbacks in case stats object is weird
                             try {
                                 if (!err) {
                                     fileList.push({
@@ -232,13 +236,13 @@ function consoleaction(args, rights, sessionid, parent) {
                                     });
                                 }
                             } catch (e) { }
-
-                            processing--;
-                            if (processing == 0) {
-                                sendDirResponse(dir, fileList, args.reqId);
-                            }
+                            // Add a small yield to prevent blocking unrelated events for too long if needed, 
+                            // though setImmediate/nextTick might not be available in strict shim environments. 
+                            // Direct recursion here is async due to fs.stat callback, so stack won't overflow.
+                            processNext(idx + 1);
                         });
-                    });
+                    };
+                    processNext(0);
                 });
             } catch (e) { sendError(e.toString(), args.reqId); }
             break;

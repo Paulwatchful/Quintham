@@ -282,7 +282,7 @@
             if (reqTimeout) clearTimeout(reqTimeout);
             reqTimeout = setTimeout(function () {
                 document.getElementById('fileList').innerText = "Error: Request Timed Out (Agent might be offline or busy path)";
-            }, 10000);
+            }, 30000);
             sendPluginCommand('listDirectory', { path: path });
         }
 

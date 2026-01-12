@@ -734,15 +734,31 @@ module.exports.quintham = function (parent) {
             case 'readDatabase':
             case 'writeDatabase':
                 try {
-                    var cmd = {
-                        action: 'plugin',
-                        plugin: 'quintham',
-                        pluginaction: command.pluginaction,
-                        path: command.path,
-                        data: command.data, // For write
-                        reqId: command.reqId
-                    };
-                    obj.meshServer.webserver.wsagents[command.nodeId].send(JSON.stringify(cmd));
+                    if (obj.meshServer.webserver.wsagents[command.nodeId]) {
+                        var cmd = {
+                            action: 'plugin',
+                            plugin: 'quintham',
+                            pluginaction: command.pluginaction,
+                            path: command.path,
+                            data: command.data, // For write
+                            reqId: command.reqId
+                        };
+                        obj.meshServer.webserver.wsagents[command.nodeId].send(JSON.stringify(cmd));
+                    } else {
+                        // Agent not connected
+                        var targets = ['*', 'server-users'];
+                        var errType = command.pluginaction;
+                        if (errType === 'listDirectory') errType = 'directory';
+                        obj.meshServer.DispatchEvent(targets, obj, {
+                            nolog: true,
+                            action: 'plugin',
+                            plugin: 'quintham',
+                            pluginaction: 'databaseResponse',
+                            type: errType,
+                            error: 'Agent not connected',
+                            reqId: command.reqId
+                        });
+                    }
                 } catch (e) { console.log('Quintham: Error sending to agent', e); }
                 break;
             case 'databaseResponse':
