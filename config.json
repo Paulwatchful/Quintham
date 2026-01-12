@@ -1,7 +1,7 @@
 {
   "name": "Quintham Plugin",
   "shortName": "quintham",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "author": "Paul Greenwood",
   "description": "Quintham Toolkit management plugin.",
   "hasAdminPanel": false,
@@ -13,8 +13,8 @@
     "type": "git",
     "url": "https://github.com/Paulwatchful/Quintham.git"
   },
-  "meshCentralCompat": ">=1.0.0",
   "versionHistoryUrl": "https://api.github.com/repos/Paulwatchful/Quintham/tags",
+  "meshCentralCompat": ">=1.1.35",
   "status": 1,
   "type": "plugin"
 }
