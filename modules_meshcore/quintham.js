@@ -176,14 +176,21 @@ function consoleaction(args, rights, sessionid, parent) {
             break;
         case 'listDirectory':
             var fs = require('fs');
-            var path = require('path');
+            // Manual path handling to avoid missing 'path' module
             var dir = args.path;
 
-            // Basic path sanitization/handling
+            // Basic path sanitization
             if (dir == '' || dir == null) {
                 if (process.platform == 'win32') dir = 'C:\\';
                 else dir = '/';
             }
+
+            // Helper to join paths
+            var joinPath = function (p1, p2) {
+                var sep = (process.platform == 'win32') ? '\\' : '/';
+                if (p1.endsWith('/') || p1.endsWith('\\')) return p1 + p2;
+                return p1 + sep + p2;
+            };
 
             try {
                 fs.readdir(dir, function (err, files) {
@@ -192,9 +199,17 @@ function consoleaction(args, rights, sessionid, parent) {
                         return;
                     }
                     var fileList = [];
-                    // Add parent directory option if not at root
-                    if (dir.length > 3) {
-                        fileList.push({ name: '..', type: 'dir', path: path.join(dir, '..') });
+                    // Add parent directory option
+                    if (dir.length > 3 || (process.platform != 'win32' && dir.length > 1)) {
+                        // Simple parent calc
+                        var parent = dir;
+                        if (parent.endsWith('/') || parent.endsWith('\\')) parent = parent.slice(0, -1);
+                        var lastSep = Math.max(parent.lastIndexOf('/'), parent.lastIndexOf('\\'));
+                        if (lastSep > 0) parent = parent.substring(0, lastSep);
+                        else if (process.platform == 'win32') parent = parent.substring(0, lastSep + 1); // Keep C:\
+                        else parent = '/';
+
+                        fileList.push({ name: '..', type: 'dir', path: parent });
                     }
 
                     var processing = files.length;
@@ -204,16 +219,20 @@ function consoleaction(args, rights, sessionid, parent) {
                     }
 
                     files.forEach(function (f) {
-                        var fullPath = path.join(dir, f);
+                        var fullPath = joinPath(dir, f);
                         fs.stat(fullPath, function (err, stats) {
-                            if (!err) {
-                                fileList.push({
-                                    name: f,
-                                    type: stats.isDirectory() ? 'dir' : 'file',
-                                    path: fullPath,
-                                    size: stats.size
-                                });
-                            }
+                            // Use try-catch inside callbacks in case stats object is weird
+                            try {
+                                if (!err) {
+                                    fileList.push({
+                                        name: f,
+                                        type: (stats && stats.isDirectory && stats.isDirectory()) ? 'dir' : 'file',
+                                        path: fullPath,
+                                        size: (stats && stats.size) ? stats.size : 0
+                                    });
+                                }
+                            } catch (e) { }
+
                             processing--;
                             if (processing == 0) {
                                 sendDirResponse(dir, fileList, args.reqId);
