@@ -123,6 +123,10 @@
     <div id="fileBrowser">
         <div id="browserContent">
             <h3>Select Database File <button onclick="closeBrowser()" style="float:right;">X</button></h3>
+            <div style="margin-bottom: 5px;">
+                <button onclick="loadDirectory('C:\\')">Go to C:\</button>
+                <button onclick="goUpDir()">Up Level</button>
+            </div>
             <div>Current Path: <span id="browserPath"></span></div>
             <hr />
             <div id="fileList"></div>
@@ -227,14 +231,38 @@
         function browseFiles() {
             document.getElementById('fileBrowser').style.display = 'block';
             var currentPath = document.getElementById('dbPath').value;
-            // Try to get directory of current file
-            var dir = currentPath.substring(0, currentPath.lastIndexOf('\\'));
-            if (!dir) dir = "C:\\";
+            // If it looks like a file (ends in .something), strip the filename
+            var dir = currentPath;
+            if (currentPath.match(/\.[0-9a-z]+$/i)) {
+                var lastSlash = Math.max(currentPath.lastIndexOf('\\'), currentPath.lastIndexOf('/'));
+                if (lastSlash !== -1) dir = currentPath.substring(0, lastSlash);
+            }
+            if (!dir || dir.trim() === '') dir = "C:\\";
             loadDirectory(dir);
         }
 
         function closeBrowser() {
             document.getElementById('fileBrowser').style.display = 'none';
+        }
+
+        function goUpDir() {
+            var currentPath = document.getElementById('browserPath').innerText;
+            // Simple string manipulation for 'Up'
+            // Handle trailing slash
+            if (currentPath.endsWith('\\')) currentPath = currentPath.slice(0, -1);
+            if (currentPath.endsWith('/')) currentPath = currentPath.slice(0, -1);
+
+            var separator = currentPath.indexOf('/') !== -1 ? '/' : '\\';
+            var lastIdx = currentPath.lastIndexOf(separator);
+            if (lastIdx !== -1) {
+                var newPath = currentPath.substring(0, lastIdx);
+                if (newPath.endsWith(':')) newPath += separator; // handle C: -> C:\
+                if (newPath == '') newPath = separator; // handle /usr -> /
+                loadDirectory(newPath);
+            } else {
+                // Already at root or invalid? Try C:\
+                loadDirectory('C:\\');
+            }
         }
 
         function loadDirectory(path) {
