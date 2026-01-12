@@ -1,7 +1,7 @@
 {
   "name": "Quintham",
   "shortName": "quintham",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "author": "Paul Greenwood",
   "description": "Quintham Database Manager & Script Runner",
   "hasAdminPanel": false,

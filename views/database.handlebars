@@ -126,6 +126,7 @@
             <div style="margin-bottom: 5px;">
                 <button onclick="loadDirectory('C:\\')">Go to C:\</button>
                 <button onclick="goUpDir()">Up Level</button>
+                <button onclick="connectAgent()" title="Establish connection tunnel to agent">Connect to Agent</button>
             </div>
             <div>Current Path: <span id="browserPath"></span></div>
             <hr />
@@ -284,6 +285,13 @@
                 document.getElementById('fileList').innerText = "Error: Request Timed Out (Agent might be offline or busy path)";
             }, 30000);
             sendPluginCommand('listDirectory', { path: path });
+        }
+
+        function connectAgent() {
+            if (!currentNodeId) return;
+            // Standard MeshCentral connect command
+            window.opener.parent.meshserver.send({ action: 'msg', type: 'tunnel', nodeid: currentNodeId, Usage: 1 });
+            document.getElementById('fileList').innerText = "Initiating connection... please wait a moment then try browsing.";
         }
 
         function selectFile(path) {
