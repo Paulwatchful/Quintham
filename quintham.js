@@ -729,6 +729,7 @@ module.exports.quintham = function (parent) {
                         obj.updateFrontEnd({ variables: true });
                     })
                 break;
+            case 'listDirectory':
             case 'checkDatabase':
             case 'readDatabase':
             case 'writeDatabase':
@@ -747,7 +748,9 @@ module.exports.quintham = function (parent) {
             case 'databaseResponse':
                 // Relay response from Agent to Browser
                 try {
-                    myparent.send(JSON.stringify({
+                    var targets = ['*', 'server-users'];
+                    obj.meshServer.DispatchEvent(targets, obj, {
+                        nolog: true,
                         action: 'plugin',
                         plugin: 'quintham',
                         pluginaction: 'databaseResponse',
@@ -755,7 +758,7 @@ module.exports.quintham = function (parent) {
                         data: command.data,
                         error: command.error,
                         reqId: command.reqId
-                    }));
+                    });
                 } catch (e) { }
                 break;
             default:

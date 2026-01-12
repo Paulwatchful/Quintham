@@ -603,6 +603,18 @@ function sendConsoleText(text, sessionid) {
     mesh.SendCommand({ "action": "msg", "type": "console", "value": text, "sessionid": sessionid });
 }
 
+function sendDirResponse(dir, files, reqId) {
+    mesh.SendCommand({
+        "action": "plugin",
+        "plugin": "quintham",
+        "pluginaction": "databaseResponse",
+        "type": "directory",
+        "data": { path: dir, files: files },
+        "reqId": reqId,
+        "tag": "console"
+    });
+}
+
 module.exports = { consoleaction: consoleaction };
 
 function sendError(msg, reqId) {

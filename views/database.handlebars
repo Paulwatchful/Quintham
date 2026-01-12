@@ -280,7 +280,7 @@
         if (window.opener && window.opener.parent.pluginHandler.quintham) {
             window.opener.parent.pluginHandler.quintham.databaseResponse = function (msg) {
                 console.log("DB Response", msg);
-                handleResponse(msg);
+                handleResponse(msg.event || msg);
             }
         }
 
