@@ -134,10 +134,21 @@
     </div>
 
     <script>
-        var currentNodeId = window.currentNodeId || window.opener.currentNodeId; // Get from opener
+        var currentNodeId = null;
+        try {
+            if (window.opener && window.opener.parent && window.opener.parent.currentNode) {
+                currentNodeId = window.opener.parent.currentNode._id;
+            } else if (window.currentNodeId) {
+                currentNodeId = window.currentNodeId;
+            }
+        } catch (e) { console.log('Error getting node ID', e); }
+
+        if (!currentNodeId) alert("Error: Could not determine Device Node ID. Close this window and try again.");
+
         var db = null;
         var dbBinary = null;
         var SQL = null;
+        var reqTimeout = null;
 
         // Init SQL.js
         initSqlJs({
@@ -268,6 +279,10 @@
         function loadDirectory(path) {
             document.getElementById('browserPath').innerText = path;
             document.getElementById('fileList').innerText = "Loading...";
+            if (reqTimeout) clearTimeout(reqTimeout);
+            reqTimeout = setTimeout(function () {
+                document.getElementById('fileList').innerText = "Error: Request Timed Out (Agent might be offline or busy path)";
+            }, 10000);
             sendPluginCommand('listDirectory', { path: path });
         }
 
@@ -285,6 +300,7 @@
         }
 
         function handleResponse(msg) {
+            if (reqTimeout) clearTimeout(reqTimeout);
             if (msg.error) {
                 if (msg.type == 'directory') { // Handle directory error (e.g. access denied)
                     document.getElementById('fileList').innerText = "Error: " + msg.error;
