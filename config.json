@@ -5,13 +5,16 @@
   "author": "Paul Greenwood",
   "description": "Quintham Toolkit management plugin.",
   "hasAdminPanel": false,
-  "meshCentralCompat": ">=1.0.0",
-  "type": "plugin",
-  "status": 1,
+  "homepage": "https://github.com/Paulwatchful/Quintham",
+  "changelogUrl": "https://raw.githubusercontent.com/Paulwatchful/Quintham/main/changelog.md",
+  "configUrl": "https://raw.githubusercontent.com/Paulwatchful/Quintham/main/config.json",
+  "downloadUrl": "https://github.com/Paulwatchful/Quintham/archive/main.zip",
   "repository": {
     "type": "git",
     "url": "https://github.com/Paulwatchful/Quintham.git"
   },
-  "configUrl": "https://raw.githubusercontent.com/Paulwatchful/Quintham/main/config.json",
-  "downloadUrl": "https://github.com/Paulwatchful/Quintham/archive/main.zip"
+  "meshCentralCompat": ">=1.0.0",
+  "versionHistoryUrl": "https://api.github.com/repos/Paulwatchful/Quintham/tags",
+  "status": 1,
+  "type": "plugin"
 }
