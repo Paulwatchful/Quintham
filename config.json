@@ -7,5 +7,11 @@
   "hasAdminPanel": false,
   "meshCentralCompat": ">=1.0.0",
   "type": "plugin",
-  "status": 1
+  "status": 1,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Paulwatchful/Quintham.git"
+  },
+  "configUrl": "https://raw.githubusercontent.com/Paulwatchful/Quintham/main/config.json",
+  "downloadUrl": "https://github.com/Paulwatchful/Quintham/archive/main.zip"
 }
