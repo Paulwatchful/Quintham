@@ -101,6 +101,7 @@
 <body>
     <h2>Quintham Database Manager</h2>
     <div class="toolbar">
+        <button onclick="window.history.back()"> &lt; Back </button>
         Path: <input type="text" id="dbPath"
             value="C:\Users\PaulGreenwood\AppData\Local\Packages\Watchful_9nnya97m1bay6\LocalCache\Local\Watchful\database.db3"
             style="width: 400px;">
@@ -141,6 +142,8 @@
                 currentNodeId = window.opener.parent.currentNode._id;
             } else if (window.currentNodeId) {
                 currentNodeId = window.currentNodeId;
+            } else if (parent && parent.currentNode) {
+                currentNodeId = parent.currentNode._id;
             }
         } catch (e) { console.log('Error getting node ID', e); }
 
