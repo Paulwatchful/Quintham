@@ -328,8 +328,8 @@
         }
 
         // Listen for messages from Server
-        if (window.opener && window.opener.parent.pluginHandler.quintham) {
-            window.opener.parent.pluginHandler.quintham.databaseResponse = function (msg) {
+        if (meshScope && meshScope.pluginHandler && meshScope.pluginHandler.quintham) {
+            meshScope.pluginHandler.quintham.databaseResponse = function (msg) {
                 console.log("DB Response", msg);
                 handleResponse(msg.event || msg);
             }
