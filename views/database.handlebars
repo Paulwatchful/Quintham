@@ -287,11 +287,36 @@
             sendPluginCommand('listDirectory', { path: path });
         }
 
+        sendPluginCommand('listDirectory', { path: path });
+        }
+
+        var connectInterval = null;
+        var connectAttempts = 0;
+
         function connectAgent() {
             if (!currentNodeId) return;
             // Standard MeshCentral connect command
             window.opener.parent.meshserver.send({ action: 'msg', type: 'tunnel', nodeid: currentNodeId, Usage: 1 });
-            document.getElementById('fileList').innerText = "Initiating connection... please wait a moment then try browsing.";
+
+            var statusDiv = document.getElementById('fileList');
+            statusDiv.innerText = "Initiating connection...";
+
+            if (connectInterval) clearInterval(connectInterval);
+            connectAttempts = 0;
+
+            connectInterval = setInterval(function () {
+                connectAttempts++;
+                statusDiv.innerText = "Waiting for agent connection... (Attempt " + connectAttempts + "/15)";
+
+                // Try to load the directory again
+                var path = document.getElementById('browserPath').innerText || 'C:\\';
+                sendPluginCommand('listDirectory', { path: path });
+
+                if (connectAttempts >= 15) {
+                    clearInterval(connectInterval);
+                    statusDiv.innerText = "Connection timed out. Please try connecting manually in the Desktop tab.";
+                }
+            }, 2000); // Retry every 2 seconds
         }
 
         function selectFile(path) {
@@ -309,13 +334,30 @@
 
         function handleResponse(msg) {
             if (reqTimeout) clearTimeout(reqTimeout);
+
+            // If we are connecting and get a success or a specific error (not 'Agent not connected'), stop retrying
             if (msg.error) {
-                if (msg.type == 'directory') { // Handle directory error (e.g. access denied)
-                    document.getElementById('fileList').innerText = "Error: " + msg.error;
+                if (msg.error === 'Agent not connected') {
+                    // If we are actively trying to connect, ignore this specific error and keep waiting
+                    if (connectInterval) return;
+                } else {
+                    // Real error, stop retry
+                    if (connectInterval) clearInterval(connectInterval);
+                }
+
+                if (msg.type == 'directory') {
+                    // Only overwrite text if we aren't in the middle of a connect loop (or if connection failed)
+                    if (!connectInterval) document.getElementById('fileList').innerText = "Error: " + msg.error;
                     return;
                 }
                 setStatus("Error: " + msg.error);
                 return;
+            }
+
+            // If we received valid data, connection is successful!
+            if (connectInterval) {
+                clearInterval(connectInterval);
+                connectInterval = null;
             }
             if (msg.type == 'check') {
                 setStatus(msg.data ? "Database Exists" : "Database Not Found");
